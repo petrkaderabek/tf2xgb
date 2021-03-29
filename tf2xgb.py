@@ -348,4 +348,35 @@ def xgb_tf_loss(ragged_nested_index_lists, target):
     return decorator
     
     
+def xgb_tf_metric(ragged_nested_index_lists, target):
+    """Decorator of custom pooling metric function. It produces the custom metric 
+    function, which measures performance on the aggregate (group) level and can be
+    used as a callback funcition during XGBoost training (e.g. for early stopping).
+    
+    Decorated function:
+    = xgb_tf_metric: function with two numpy array inputs: 1D target
+    with shape (#groups) and multidimensional predictions with the 
+    first dimension of length #groups. This function internally performs pooling 
+    of predictions to the 1D shape (#groups) and computes a score.
+    
+    IMPORTANT:
+    Missing values in the multidimensional predictions are denoted by np.nan and 
+    have to be taken care of by xgb_metric_fn function body. They occur simply 
+    because the multidimensional predictions tensor has typically much more 
+    elements that the original flat predictions vector from XGBoost.
+
+    Inputs:
+    = ragged_nested_index_lists: the nested list of indices to XGB predictions
+      vector; in the example of 2D ragged_nested_index_lists, consider 
+      ragged_nested_index_lists[i, j] = k; this means that xgb_predictions[k]
+        = predictions_input_to_tf_metric[i, j]
+    = target: tensor with group-level targets
+    """
+    array_converter = FlatVsNDimArrayConverter(ragged_nested_index_lists)
+    def decorator(xgb_tf_metric):
+        def xgb_metric_fn(preds, DMatrix, **kwargs):
+            preds_cube = array_converter.flat2nd(preds, fill_value=np.nan)
+            return xgb_tf_metric(target, preds_cube, **kwargs)
+        return xgb_metric_fn
+    return decorator
 
