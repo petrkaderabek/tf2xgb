@@ -1,0 +1,7 @@
+include *.txt
+include *.md
+
+include ./tf2xgb
+
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
