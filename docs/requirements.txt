@@ -1,3 +1,4 @@
+tf2xgb
 sphinx
 myst-parser
 sphinx_rtd_theme
