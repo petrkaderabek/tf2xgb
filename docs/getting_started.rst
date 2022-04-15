@@ -1,5 +1,5 @@
 Getting started
 **************************
 
-.. include:: ../README.md
+.. include:: get_started.md
    :parser: myst_parser.sphinx_
