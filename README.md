@@ -17,5 +17,4 @@ pip install tf2xgb
 ```
 
 # Documentation
-
-
+[Official documentation](https://tf2xgb.readthedocs.io/en/latest/getting_started.html)
