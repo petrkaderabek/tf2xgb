@@ -1,7 +1,6 @@
 import numpy as np
 import xgboost as xgb
 import tensorflow as tf
-import pandas as pd
 
 class FlatVsNDimArrayConverter:
     """XGBoost uses 1D arrays for targets and predictions. On the other hand, 
@@ -35,12 +34,12 @@ class FlatVsNDimArrayConverter:
         flat = np.full(flat_shape, fill_value)
         self._flatten_nd_array_by_nested_indices(flat, self.ragged_nested_index_lists, nd_array)
         return flat
-    
+
     def flat2nd(self, flat, nd_shape=None, fill_value=0.0):
         """Convert the flat array `flat` to the shape nd_shape. If nd_shape
         is None (default), the shape inferred from self.ragged_nested_index_lists
         is used.
-
+        
         Values of the output array, which are not filled because of the
         ragged self.ragged_nested_index_lists, will be filled with fill_value.
         """
@@ -53,7 +52,7 @@ class FlatVsNDimArrayConverter:
     def _get_shape_of_ragged_nested_lists(self, l, _level=0, _shape=[]):
         """Infers shape of a nested list or multidimensional array
         needed to fit the ragged nested list l.
-
+        
         Examples:
         get_shape_of_ragged_nested_lists([1, 2, 3])==[3]
         get_shape_of_ragged_nested_lists([[1], [2], [3, 33]])==[3, 2]
@@ -85,7 +84,7 @@ class FlatVsNDimArrayConverter:
         = input_array: the array, where the first coordinate corresponds to the
         values in nested_list_of_indices and the remaining dimension(s) 
         correspond(s) to the last dimensions of output_nd_array
-
+        
         Example:
         output_nd_array = [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]
         nested_list_of_indices = [2, 1, 0]
@@ -109,7 +108,7 @@ class FlatVsNDimArrayConverter:
                 raise ValueError(f"Expected value of type int or list in list of indices "
                                 f"nested_list_of_indices but {nested_list_of_indices} "
                                 f"found.")
-                
+
     def _flatten_nd_array_by_nested_indices(self, output_array, nested_list_of_indices, input_nd_array):
         """
         Parameters:
@@ -124,8 +123,7 @@ class FlatVsNDimArrayConverter:
         nested_list_of_indices[i, j] = k; this means that output_array[k]
         will be set to vector (or array) input_nd_array[i,j][:]
         = input_nd_array: the input array with nested structure
-
-
+        
         Example:
         output_array = [[0, 0], [0, 0], [0, 0]]
         nested_list_of_indices = [2, 1, 0]
@@ -149,86 +147,14 @@ class FlatVsNDimArrayConverter:
                 raise ValueError(f"Expected value of type int in list of indices "
                                 f"nested_list_of_indices but {nested_list_of_indices} "
                                 f"found.")
-                                
-                        
-def get_ragged_nested_index_lists(df, id_col_list):
-    """
-    Gets the ragged nested lists of indices (= row numbers of `df`).
-    Hierarchy in the nesting is set up by the `df` columns with names
-    in `id_col_list`.
 
-    Inputs:
-    = df: Pandas Data Frame with the sample. It ias to contain columns 
-    listed in `id_col_list`.
-    = id_col_list: list of columns to `df` which correspond to the levels
-    of nesting in the resulting index list. Higher-level groups have to 
-    be mentioned first, e.g. ['grp_id', 'subgrp_id'].
 
-    Returns:
-    Pandas DF with two columns:
-    = copy of df[id_col_list[0]]
-    = column `_row_` containing nested list of row numbers, which is input to 
-    decorator `xgb_tf_loss()`.
-
-    Example:
-    id_col_list = ['grp_id', 'subgrp_id']
-    The result has 3 levels of nesting: (#grp_ids, subgrp_id within grp_ids,
-    individual observation within subgrp_id)
-    """
-    df_idx = df[id_col_list].copy()
-    df_idx['_row_'] = list(range(len(df_idx)))
-    remaining_cols = list(id_col_list)
-    while remaining_cols:
-        c = remaining_cols.pop()
-        df_idx = df_idx.groupby(c).agg({'_row_':lambda x: list(x), **{rc:max for rc in remaining_cols}}).reset_index()
-    return df_idx
-    
-    
-def gen_random_dataset(n, n_subgrp, n_grp, beta, sigma):
-    """
-    Generate random Pandas Data Frame with `n` observations split to `n_subgrp`
-    distinct subgroups described by column 'subgrp_id' and `n_grp` distinct 
-    groups described by column 'grp_id'. The target in column 'y' is
-    linear combination of feature vector in column 'X' with true coefficient 
-    vector `beta` and standard error `sigma`. Intercept is zero.
-    """
-    assert n >= n_subgrp
-    assert n_subgrp >= n_grp
-
-    def gen_rand_sample(n_obs, beta, sigma):
-        n_feats = len(beta)
-        X = np.random.randn(n_obs, n_feats)
-        epsilon = np.random.randn(n_obs)*sigma
-        y = np.matmul(X, beta) + epsilon
-        return X,y
-
-    def gen_rand_grp_id(n_obs, n_grp, prefix='GRP'):
-        grp_num = np.concatenate((
-            np.arange(n_grp, dtype='I'),
-            np.random.randint(0,n_grp,size=n_obs-n_grp)
-            ))
-        grp = np.asarray([f'{prefix}{i}' for i in grp_num])
-        return grp
-
-    X,y = gen_rand_sample(n, beta, sigma)
-    df = pd.DataFrame(data={f'_row_':list(range(len(y))), 'X':X.tolist(), 'y':y})
-    if n_subgrp:
-        subgrp_ids = gen_rand_grp_id(n, n_subgrp, prefix='SUBGRP')
-        subgrp_ids_distinct = list(set(subgrp_ids.tolist()))
-        df['subgrp_id'] = subgrp_ids
-        if n_grp:
-            grp_ids = gen_rand_grp_id(len(subgrp_ids_distinct), n_grp, prefix='GRP')
-            subgrp2grp_id_dict = {k:v for k,v in zip(subgrp_ids_distinct, grp_ids)}
-            df['grp_id'] = df['subgrp_id'].map(subgrp2grp_id_dict)
-    return df
-    
-    
 @tf.function
 def tf_d_loss_single_input(tf_loss_fn, target, preds_nd, mask):
     """Calculate first and second derivatives of tf_loss_fn with respect to
     preds_nd with parameters target. The differentiation is done using 
     TensorFlow.
-
+    
     Inputs:
     tf_loss_fn: TensorFlow function with two numpy array inputs: 1D target
     with shape (#groups) and multidimensional predictions with the 
@@ -267,7 +193,7 @@ def tf_d_loss(tf_loss_fn, target, preds_nd):
     """
     Returns 1st and 2nd order derivatives of the scalar loss resulting from
     tf_loss_fn() with respect to preds_nd.
-
+    
     Inputs:
     tf_loss_fn: TensorFlow function with two numpy array inputs: 1D target
     with shape (#groups) and multidimensional predictions with the 
@@ -281,7 +207,7 @@ def tf_d_loss(tf_loss_fn, target, preds_nd):
     = preds_nd: n-dimensional tensor of (reshaped) XGBoost predictions,
     which is fed into tf_loss_fn() for it to perform pooling and loss 
     calculation.
-
+    
     Result:
     tuple of 1st derivatives tensor and 2nd derivatives tensor. Both these 
     tensors have the same shape as the input preds_nd tensor.
@@ -310,16 +236,16 @@ def tf_d_loss(tf_loss_fn, target, preds_nd):
 
 
 def xgb_tf_loss(ragged_nested_index_lists, target):
-    """Decorator of custom TensorFlow pooling&loss function tf_loss_fn.
+    """Decorator of custom TensorFlow pooling&loss function ``tf_loss_fn``.
     It produces the custom objective function, which is input to XGBoost.
 
     Decorated function:
-    = tf_loss_fn: TensorFlow function with two numpy array inputs: 1D target
+    TensorFlow function with two numpy array inputs: 1D target
     with shape (#groups) and multidimensional predictions with the 
     first dimension of length #groups. This function internally performs pooling 
     of predictions to the 1D shape (#groups), compares them with target and
     returns a scalar loss value. This output reflects MEAN of losses,
-    which is the output of e.g. tf.keras.losses.mean_squared_error().
+    which is the output of e.g. ``tf.keras.losses.mean_squared_error()``.
     The MEAN is translated to SUM later in this function because of the 
     compatibility with XGB custom objective function.
 
@@ -329,12 +255,13 @@ def xgb_tf_loss(ragged_nested_index_lists, target):
     because the multidimensional predictions tensor has typically much more 
     elements that the original flat predictions vector from XGBoost.
 
-    Inputs:
-    = ragged_nested_index_lists: the nested list of indices to XGB predictions
-      vector; in the example of 2D ragged_nested_index_lists, consider 
-      ragged_nested_index_lists[i, j] = k; this means that xgb_predictions[k]
-        = predictions_input_to_tf_pooling_and_loss[i, j] 
-    = target: tensor with group-level targets
+    :param ragged_nested_index_lists: the nested list of indices to XGB predictions 
+        vector; in the example of 2D ragged_nested_index_lists, consider 
+        ``ragged_nested_index_lists[i, j] = k``; this means that ``xgb_predictions[k]
+        = predictions_input_to_tf_pooling_and_loss[i, j]``
+    :param target: tensor with group-level targets
+    
+    :returns: decorated function
     """
     array_converter = FlatVsNDimArrayConverter(ragged_nested_index_lists)
     def decorator(tf_loss_fn):
@@ -354,23 +281,24 @@ def xgb_tf_metric(ragged_nested_index_lists, target):
     used as a callback funcition during XGBoost training (e.g. for early stopping).
     
     Decorated function:
-    = xgb_tf_metric: function with two numpy array inputs: 1D target
+    Function with two numpy array inputs: 1D target
     with shape (#groups) and multidimensional predictions with the 
     first dimension of length #groups. This function internally performs pooling 
     of predictions to the 1D shape (#groups) and computes a score.
     
     IMPORTANT:
     Missing values in the multidimensional predictions are denoted by np.nan and 
-    have to be taken care of by xgb_metric_fn function body. They occur simply 
+    have to be taken care of by ``xgb_metric_fn`` function body. They occur simply 
     because the multidimensional predictions tensor has typically much more 
     elements that the original flat predictions vector from XGBoost.
 
-    Inputs:
-    = ragged_nested_index_lists: the nested list of indices to XGB predictions
-      vector; in the example of 2D ragged_nested_index_lists, consider 
-      ragged_nested_index_lists[i, j] = k; this means that xgb_predictions[k]
-        = predictions_input_to_tf_metric[i, j]
-    = target: tensor with group-level targets
+    :param ragged_nested_index_lists: the nested list of indices to XGB predictions 
+        vector; in the example of 2D ragged_nested_index_lists, consider 
+        ``ragged_nested_index_lists[i, j] = k``; this means that ``xgb_predictions[k]
+        = predictions_input_to_tf_metric[i, j]``
+    :param target: tensor with group-level targets
+    
+    :returns: decorated function
     """
     array_converter = FlatVsNDimArrayConverter(ragged_nested_index_lists)
     def decorator(xgb_tf_metric):
